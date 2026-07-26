@@ -158,19 +158,29 @@
         const email = document.getElementById('emailInput').value;
         const pass = document.getElementById('passInput').value;
         try {
+            // Create the user
             await account.create(ID.unique(), email, pass);
-            await login(); // Auto login after register
-        } catch (e) { alert("Registration failed: " + e.message); }
+            // Immediately login after creation
+            await login(); 
+        } catch (e) { 
+            alert("Registration failed: " + e.message + "\n\n(Did you add your Hostname to Appwrite Platforms?)"); 
+            console.error(e);
+        }
     }
 
     async function login() {
         const email = document.getElementById('emailInput').value;
         const pass = document.getElementById('passInput').value;
         try {
-            await account.createEmailPasswordSession(email, pass);
+            // FIX: Using createEmailSession instead of createEmailPasswordSession
+            await account.createEmailSession(email, pass);
+            
             currentUser = await account.get();
             showMainPanel();
-        } catch (e) { alert("Login failed: " + e.message); }
+        } catch (e) { 
+            alert("Login failed: " + e.message); 
+            console.error(e);
+        }
     }
 
     async function logout() {
