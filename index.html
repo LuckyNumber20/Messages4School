@@ -39,6 +39,7 @@
             text-transform: uppercase; 
             letter-spacing: 1px; 
             display: flex;
+            align-items: center;
             justify-content: space-between;
         }
         .chat-area { 
@@ -64,6 +65,19 @@
         .contacts-sidebar { max-height: 150px; overflow-y: auto; border: 1px solid #333; margin-bottom: 10px; padding: 5px; background: #0a0a0a;}
         .contact-item { cursor: pointer; padding: 2px 5px; }
         .contact-item:hover { background: #222; }
+
+        /* Sightengine badge */
+        .mod-badge {
+            font-size: 0.55rem;
+            color: #00ffcc;
+            border: 1px solid #00ffcc;
+            padding: 1px 5px;
+            border-radius: 2px;
+            margin-left: 6px;
+            vertical-align: middle;
+            letter-spacing: 0.5px;
+            opacity: 0.75;
+        }
     </style>
 </head>
 <body>
@@ -84,7 +98,7 @@
 
 <div id="mainPanel" class="panel hidden">
     <div class="panel-head">
-        <span>Radio</span>
+        <span>Radio <span class="mod-badge">MODERATED</span></span>
         <span id="myFriendCode" style="color: #888; font-size: 0.7rem;">Code: Loading...</span>
         <button class="btn btn-danger btn-sm" style="font-size: 0.6rem; padding: 0 4px;" onclick="logout()">LOGOUT</button>
     </div>
@@ -118,74 +132,117 @@
 </div>
 
 <script>
-    // --- APPWRITE CONFIGURATION ---
+    // ─── APPWRITE CONFIGURATION ───────────────────────────────────────────────
     const { Client, Account, Databases, ID, Query } = Appwrite;
     const client = new Client()
-        .setEndpoint('https://nyc.cloud.appwrite.io/v1') // Or your self-hosted endpoint
-        .setProject('6a64f37300151ccefd0f');              // REPLACE THIS
+        .setEndpoint('https://nyc.cloud.appwrite.io/v1')
+        .setProject('6a64f37300151ccefd0f');
 
-    const account = new Account(client);
+    const account   = new Account(client);
     const databases = new Databases(client);
-    
-    const DB_ID = '6a64f4430013964a8413';                // REPLACE THIS
-    const MSG_COLLECTION = 'messages'; // REPLACE THIS
-    const CONTACTS_COLLECTION = 'contacts';  // REPLACE THIS
 
-    // --- STATE VARIABLES ---
-    let currentUser = null;
-    let currentMode = 'freq'; // 'freq' or 'dm'
-    let activeDMTarget = null;
+    const DB_ID              = '6a64f4430013964a8413';
+    const MSG_COLLECTION     = 'messages';
+    const CONTACTS_COLLECTION = 'contacts';
+
+    // ─── SIGHTENGINE CONFIGURATION ────────────────────────────────────────────
+    const SE_USER   = '1290337523';    // ← Replace with your Sightengine API user
+    const SE_SECRET = 'DJDFYB4t4wtYLf6RtWfKXvJRNe2ZC5z3';  // ← Replace with your Sightengine API secret
+
+    // ─── STATE VARIABLES ─────────────────────────────────────────────────────
+    let currentUser          = null;
+    let currentMode          = 'freq';
+    let activeDMTarget       = null;
     let dmRealtimeUnsubscribe = null;
+    let freq                 = "";
+    let lastTime             = 0;
+    let pollInterval         = null;
 
-    // Ntfy (Freq Mode) Variables
-    let freq = "";
-    let lastTime = 0;
-    let pollInterval = null;
+    // ─── SIGHTENGINE MODERATION ───────────────────────────────────────────────
+    /**
+     * Checks text against Sightengine for profanity, drug, and weapon content.
+     * Returns { flagged: bool, reasons: string[] }.
+     * Fails open (returns flagged: false) on any API/network error so a
+     * service outage never silently breaks the chat.
+     */
+    async function checkContent(text) {
+        try {
+            const params = new URLSearchParams({
+                text:       text,
+                lang:       'en',
+                mode:       'standard',
+                api_user:   SE_USER,
+                api_secret: SE_SECRET
+            });
 
-    // --- INITIALIZATION ---
+            const res  = await fetch(`https://api.sightengine.com/1.0/text/check.json?${params}`);
+            const data = await res.json();
+
+            if (data.status !== 'success') {
+                console.warn('[Sightengine] Unexpected response:', data);
+                return { flagged: false, reasons: [] };
+            }
+
+            const reasons = [];
+            if (data.profanity?.matches?.length > 0) {
+                const words = data.profanity.matches.map(m => `"${m.match}"`).join(', ');
+                reasons.push(`profanity — ${words}`);
+            }
+            if (data.drug?.matches?.length > 0) {
+                const words = data.drug.matches.map(m => `"${m.match}"`).join(', ');
+                reasons.push(`drug references — ${words}`);
+            }
+            if (data.weapon?.matches?.length > 0) {
+                const words = data.weapon.matches.map(m => `"${m.match}"`).join(', ');
+                reasons.push(`weapon references — ${words}`);
+            }
+
+            return { flagged: reasons.length > 0, reasons };
+        } catch (e) {
+            console.error('[Sightengine] Check error:', e);
+            return { flagged: false, reasons: [] }; // fail open
+        }
+    }
+
+    // ─── INITIALIZATION ───────────────────────────────────────────────────────
     window.onload = async () => {
         try {
             currentUser = await account.get();
             showMainPanel();
         } catch (e) {
-            // User not logged in
             document.getElementById('authPanel').classList.remove('hidden');
         }
     };
 
-    // --- AUTHENTICATION LOGIC ---
+    // ─── AUTHENTICATION ───────────────────────────────────────────────────────
     async function register() {
         const email = document.getElementById('emailInput').value;
-        const pass = document.getElementById('passInput').value;
+        const pass  = document.getElementById('passInput').value;
         try {
-            // Create the user
             await account.create(ID.unique(), email, pass);
-            // Immediately login after creation
-            await login(); 
-        } catch (e) { 
-            alert("Registration failed: "); 
+            await login();
+        } catch (e) {
+            alert("Registration failed.");
             console.error(e);
         }
     }
 
     async function login() {
         const email = document.getElementById('emailInput').value;
-        const pass = document.getElementById('passInput').value;
+        const pass  = document.getElementById('passInput').value;
         try {
-            // FIX: Using createEmailSession instead of createEmailPasswordSession
             await account.createEmailSession(email, pass);
-            
             currentUser = await account.get();
             showMainPanel();
-        } catch (e) { 
-            alert("Login failed: " + e.message); 
+        } catch (e) {
+            alert("Login failed: " + e.message);
             console.error(e);
         }
     }
 
     async function logout() {
         await account.deleteSession('current');
-        location.reload(); // Refresh to go back to auth panel
+        location.reload();
     }
 
     function showMainPanel() {
@@ -195,111 +252,114 @@
         loadContacts();
     }
 
-    // --- UI LOGIC ---
+    // ─── UI ───────────────────────────────────────────────────────────────────
     function switchTab(mode) {
         currentMode = mode;
         document.getElementById('tab-freq').classList.toggle('active', mode === 'freq');
         document.getElementById('tab-dm').classList.toggle('active', mode === 'dm');
         document.getElementById('freqControls').classList.toggle('hidden', mode !== 'freq');
         document.getElementById('dmControls').classList.toggle('hidden', mode !== 'dm');
-        
-        document.getElementById('chatBox').innerHTML = ""; // Clear chat on switch
-        
-        if(mode === 'dm') {
-            if(pollInterval) clearInterval(pollInterval);
+        document.getElementById('chatBox').innerHTML = "";
+
+        if (mode === 'dm') {
+            if (pollInterval) clearInterval(pollInterval);
             addChat("SYS", "Switched to Secure Direct Messaging mode. Select a contact.");
         } else {
-            if(dmRealtimeUnsubscribe) { dmRealtimeUnsubscribe(); dmRealtimeUnsubscribe = null; }
+            if (dmRealtimeUnsubscribe) { dmRealtimeUnsubscribe(); dmRealtimeUnsubscribe = null; }
             addChat("SYS", "Switched to Public Frequency mode.");
         }
     }
 
-    // --- FREQUENCY MODE LOGIC (Your existing code, adapted) ---
-    function joinFreq() { 
-        freq = document.getElementById('freqInput').value.trim(); 
-        if(freq) {
-            document.getElementById('chatBox').innerHTML = ""; 
+    // ─── FREQUENCY MODE ───────────────────────────────────────────────────────
+    function joinFreq() {
+        freq = document.getElementById('freqInput').value.trim();
+        if (freq) {
+            document.getElementById('chatBox').innerHTML = "";
             addChat("SYS", `Connecting to frequency: ${freq}...`);
-            if(pollInterval) clearInterval(pollInterval);
-            pollInterval = setInterval(poll, 2000); 
-            transmit("ALIVE"); 
-        } 
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(poll, 2000);
+            transmit("ALIVE");
+        }
     }
 
-    async function transmit(msg) { 
-        if(freq) { 
-            const user = currentUser.email.split('@')[0]; // Use email prefix as codename
-            await fetch(`https://ntfy.sh/${freq}`, { 
-                method: 'POST', 
-                body: `${user}||${msg}` 
-            }); 
-        } 
+    async function transmit(msg) {
+        if (freq) {
+            const user = currentUser.email.split('@')[0];
+            await fetch(`https://ntfy.sh/${freq}`, { method: 'POST', body: `${user}||${msg}` });
+        }
     }
 
     async function poll() {
-        if(!freq || currentMode !== 'freq') return;
+        if (!freq || currentMode !== 'freq') return;
         try {
-            const res = await fetch(`https://ntfy.sh/${freq}/json?poll=1&since=${lastTime === 0 ? 'all' : lastTime}`);
+            const res  = await fetch(`https://ntfy.sh/${freq}/json?poll=1&since=${lastTime === 0 ? 'all' : lastTime}`);
             const data = await res.text();
-            data.trim().split('\n').forEach(line => {
-                if(!line) return;
+            for (const line of data.trim().split('\n')) {
+                if (!line) continue;
                 const j = JSON.parse(line);
-                if(j.time > lastTime) {
+                if (j.time > lastTime) {
                     lastTime = j.time;
-                    handlePacket(j.message);
+                    await handlePacket(j.message); // await so moderation runs in order
                 }
-            });
+            }
         } catch (error) { console.error("Signal lost:", error); }
     }
 
-    function handlePacket(raw) {
-        if(!raw.includes("||")) return;
-        const p = raw.split("||");
-        const sender = p[0];
-        const msg = p[1];
+    // Now async — awaits Sightengine before rendering incoming freq messages
+    async function handlePacket(raw) {
+        if (!raw.includes("||")) return;
+        const [sender, msg] = raw.split("||");
         const me = currentUser.email.split('@')[0];
-        
-        if(sender === me) return; 
-        
+        if (sender === me) return;
+
         const cmd = msg.split("::");
-        if(cmd[0] === "CHAT") {
-            addChat(sender, cmd[1]);
+        if (cmd[0] === "CHAT") {
+            const text = cmd[1];
+
+            // ── INCOMING MODERATION (FREQ) ──
+            const check = await checkContent(text);
+            if (check.flagged) {
+                addChat("SYS", `⚠️ Incoming message from [${sender}] blocked — ${check.reasons.join('; ')}`);
+                return;
+            }
+
+            addChat(sender, text);
         } else if (msg === "ALIVE") {
             addChat("SYS", `[${sender}] joined the frequency.`);
         }
     }
 
-    // --- DIRECT MESSAGE MODE LOGIC (Appwrite) ---
+    // ─── DIRECT MESSAGE MODE ──────────────────────────────────────────────────
     async function addFriend() {
         const code = document.getElementById('friendCodeInput').value.trim();
-        if(!code || code === currentUser.$id) return alert("Invalid code.");
+        if (!code || code === currentUser.$id) return alert("Invalid code.");
         try {
             await databases.createDocument(DB_ID, CONTACTS_COLLECTION, ID.unique(), {
-                userId: currentUser.$id,
-                friendId: code,
-                friendName: `Agent_${code.substring(0,4)}` // Simplified naming
+                userId:     currentUser.$id,
+                friendId:   code,
+                friendName: `Agent_${code.substring(0, 4)}`
             });
             document.getElementById('friendCodeInput').value = "";
             loadContacts();
-        } catch(e) { alert("Failed to add: " + e.message); }
+        } catch (e) { alert("Failed to add: " + e.message); }
     }
 
     async function loadContacts() {
         try {
-            const res = await databases.listDocuments(DB_ID, CONTACTS_COLLECTION, [
+            const res  = await databases.listDocuments(DB_ID, CONTACTS_COLLECTION, [
                 Query.equal('userId', currentUser.$id)
             ]);
             const list = document.getElementById('contactsList');
             list.innerHTML = "";
-            if(res.documents.length === 0) {
+            if (res.documents.length === 0) {
                 list.innerHTML = "<div class='text-muted'>No contacts found.</div>";
                 return;
             }
             res.documents.forEach(doc => {
-                const el = document.createElement('div');
-                el.className = 'contact-item';
-                el.innerText = `📁 ${doc.friendName} (ID: ${doc.friendId})`;
-                el.onclick = () => openDM(doc.friendId, doc.friendName);
+                const el       = document.createElement('div');
+                el.className   = 'contact-item';
+                el.innerText   = ` ${doc.friendName} (ID: ${doc.friendId})`;
+                el.onclick     = () => openDM(doc.friendId, doc.friendName);
                 list.appendChild(el);
             });
         } catch (e) { console.error(e); }
@@ -309,72 +369,83 @@
         activeDMTarget = targetId;
         document.getElementById('activeDMDisplay').innerText = `TARGET LOCKED: ${targetName}`;
         document.getElementById('chatBox').innerHTML = "";
-        
-        // Load old messages
+
+        // Load history — no re-moderation on already-stored messages
         try {
             const messages = await databases.listDocuments(DB_ID, MSG_COLLECTION, [
                 Query.orderAsc('$createdAt'),
                 Query.limit(50)
             ]);
-            
             messages.documents.forEach(doc => {
-                if((doc.senderId === currentUser.$id && doc.receiverId === targetId) ||
-                   (doc.senderId === targetId && doc.receiverId === currentUser.$id)) {
+                if ((doc.senderId === currentUser.$id && doc.receiverId === targetId) ||
+                    (doc.senderId === targetId        && doc.receiverId === currentUser.$id)) {
                     addChat(doc.senderId === currentUser.$id ? "ME" : targetName, doc.text);
                 }
             });
-        } catch(e) { console.error("Error fetching DMs", e); }
+        } catch (e) { console.error("Error fetching DMs", e); }
 
-        // Subscribe to real-time new messages
-        if(dmRealtimeUnsubscribe) dmRealtimeUnsubscribe();
-        
-        dmRealtimeUnsubscribe = client.subscribe(`databases.${DB_ID}.collections.${MSG_COLLECTION}.documents`, response => {
-            if (response.events.includes('databases.*.collections.*.documents.*.create')) {
-                const doc = response.payload;
-                // If message is meant for this chat window
-                if(doc.senderId === targetId && doc.receiverId === currentUser.$id) {
-                    addChat(targetName, doc.text);
+        // Real-time subscription for new incoming DMs
+        if (dmRealtimeUnsubscribe) dmRealtimeUnsubscribe();
+
+        dmRealtimeUnsubscribe = client.subscribe(
+            `databases.${DB_ID}.collections.${MSG_COLLECTION}.documents`,
+            response => {
+                if (response.events.includes('databases.*.collections.*.documents.*.create')) {
+                    const doc = response.payload;
+                    if (doc.senderId === targetId && doc.receiverId === currentUser.$id) {
+                        addChat(targetName, doc.text); // DMs are not moderated
+                    }
                 }
             }
-        });
+        );
     }
 
-    // --- GLOBAL CHAT ROUTER ---
-    async function sendMessage() { 
+    // ─── SEND MESSAGE ─────────────────────────────────────────────────────────
+    async function sendMessage() {
         const inputField = document.getElementById('msgInput');
-        const v = inputField.value.trim(); 
-        
-        if(!v) return;
+        const v          = inputField.value.trim();
+        if (!v) return;
 
-        if(currentMode === 'freq') {
-            if(freq) { 
-                transmit(`CHAT::${v}`); 
-                addChat("ME", v); 
-                inputField.value = ""; 
-            } else { addChat("SYS", "ERROR: Join a frequency first."); }
-        } 
-        
-        else if (currentMode === 'dm') {
-            if(activeDMTarget) {
+        if (currentMode === 'freq') {
+            if (freq) {
+                // ── OUTGOING MODERATION (FREQ only) ──
+                const check = await checkContent(v);
+                if (check.flagged) {
+                    addChat("SYS", `⚠️ Your message was blocked — ${check.reasons.join('; ')}`);
+                    return; // Keep text in input so user can edit it
+                }
+                transmit(`CHAT::${v}`);
+                addChat("ME", v);
+                inputField.value = "";
+            } else {
+                addChat("SYS", "ERROR: Join a frequency first.");
+            }
+        } else if (currentMode === 'dm') {
+            if (activeDMTarget) {
                 try {
                     await databases.createDocument(DB_ID, MSG_COLLECTION, ID.unique(), {
-                        senderId: currentUser.$id,
+                        senderId:   currentUser.$id,
                         receiverId: activeDMTarget,
-                        text: v
+                        text:       v
                     });
                     addChat("ME", v);
                     inputField.value = "";
-                } catch(e) { addChat("SYS", "ERROR Sending DM: " + e.message); }
-            } else { addChat("SYS", "ERROR: Select a contact from the list first."); }
+                } catch (e) { addChat("SYS", "ERROR Sending DM: " + e.message); }
+            } else {
+                addChat("SYS", "ERROR: Select a contact from the list first.");
+            }
         }
     }
 
-    function addChat(user, text) { 
-        const box = document.getElementById('chatBox'); 
-        const isSys = user === "SYS";
-        const userStyle = isSys ? "color: #ffcc00;" : (user === "ME" ? "color: #fff;" : "color: #00ffcc;");
-        box.innerHTML += `<div class="msg"><b style="${userStyle}">${user}:</b> ${text}</div>`; 
-        box.scrollTop = box.scrollHeight; 
+    // ─── CHAT RENDERER ────────────────────────────────────────────────────────
+    function addChat(user, text) {
+        const box       = document.getElementById('chatBox');
+        const isSys     = user === "SYS";
+        const userStyle = isSys        ? "color: #ffcc00;"
+                        : user === "ME" ? "color: #fff;"
+                        :                 "color: #00ffcc;";
+        box.innerHTML += `<div class="msg"><b style="${userStyle}">${user}:</b> ${text}</div>`;
+        box.scrollTop  = box.scrollHeight;
     }
 </script>
 </body>
