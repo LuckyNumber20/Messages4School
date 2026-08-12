@@ -7,66 +7,129 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/appwrite@13.0.1"></script>
     <style>
-        body { 
-            background-color: #050505; 
-            color: #dcdcdc; 
-            font-family: 'Segoe UI', monospace; 
+        body {
+            background-color: #050505;
+            color: #dcdcdc;
+            font-family: 'Segoe UI', monospace;
             height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
             margin: 0;
         }
-        .panel { 
-            background: #111; 
-            border: 1px solid #333; 
-            border-radius: 4px; 
-            padding: 12px; 
-            display: flex; 
-            flex-direction: column; 
+        .panel {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
             width: 100%;
             max-width: 600px;
             height: 85vh;
             box-shadow: 0 4px 15px rgba(0,0,0,0.8);
         }
-        .panel-head { 
-            border-bottom: 1px solid #444; 
-            padding-bottom: 5px; 
-            margin-bottom: 10px; 
-            font-weight: bold; 
-            color: #00ffcc; 
-            font-size: 0.8rem; 
-            text-transform: uppercase; 
-            letter-spacing: 1px; 
+        .panel-head {
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+            margin-bottom: 10px;
+            font-weight: bold;
+            color: #00ffcc;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
             display: flex;
             align-items: center;
             justify-content: space-between;
         }
-        .chat-area { 
-            flex-grow: 1; 
-            background: #000; 
-            border: 1px solid #333; 
-            overflow-y: auto; 
-            padding: 8px; 
-            font-size: 0.75rem; 
-            color: #00ffcc; 
-            font-family: 'Consolas', monospace; 
+        .chat-area {
+            flex-grow: 1;
+            background: #000;
+            border: 1px solid #333;
+            overflow-y: auto;
+            padding: 8px;
+            font-size: 0.75rem;
+            color: #00ffcc;
+            font-family: 'Consolas', monospace;
         }
-        .msg { 
-            border-bottom: 1px solid #1a1a1a; 
-            margin-bottom: 4px; 
+
+        /* ── Message layout ── */
+        .msg {
+            border-bottom: 1px solid #1a1a1a;
+            margin-bottom: 4px;
             padding-bottom: 4px;
             word-wrap: break-word;
         }
+        .msg-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+        }
+        .timestamp {
+            color: #3a3a3a;
+            font-size: 0.62rem;
+            flex-shrink: 0;
+        }
+        .msg-body { margin-top: 2px; }
+
+        /* ── File / image attachments ── */
+        .msg-img {
+            max-width: 220px;
+            max-height: 160px;
+            margin-top: 4px;
+            border: 1px solid #2a2a2a;
+            border-radius: 2px;
+            display: block;
+            cursor: pointer;
+            transition: border-color 0.15s;
+        }
+        .msg-img:hover { border-color: #00ffcc; }
+        .msg-file {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 4px;
+            padding: 4px 10px;
+            background: #0d0d0d;
+            border: 1px solid #2a2a2a;
+            border-radius: 2px;
+            color: #888;
+            text-decoration: none;
+            font-size: 0.72rem;
+            transition: border-color 0.15s, color 0.15s;
+        }
+        .msg-file:hover { border-color: #00ffcc; color: #00ffcc; }
+
+        /* ── Input row ── */
+        .input-row {
+            display: flex;
+            gap: 4px;
+            margin-top: 8px;
+            align-items: center;
+        }
+        .attach-btn {
+            background: #111;
+            border: 1px solid #333;
+            color: #555;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            border-radius: 2px;
+            flex-shrink: 0;
+            line-height: 1;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        .attach-btn:hover { color: #00ffcc; border-color: #00ffcc; }
+
+        /* ── Misc ── */
         .hidden { display: none !important; }
         .nav-tabs { border-bottom: 1px solid #333; margin-bottom: 10px; }
         .nav-link { color: #888; padding: 5px 10px; font-size: 0.8rem; cursor: pointer; }
         .nav-link.active { color: #00ffcc; border-bottom: 2px solid #00ffcc; }
-        .contacts-sidebar { max-height: 150px; overflow-y: auto; border: 1px solid #333; margin-bottom: 10px; padding: 5px; background: #0a0a0a;}
+        .contacts-sidebar { max-height: 150px; overflow-y: auto; border: 1px solid #333; margin-bottom: 10px; padding: 5px; background: #0a0a0a; }
         .contact-item { cursor: pointer; padding: 2px 5px; }
         .contact-item:hover { background: #222; }
-
-        /* Sightengine badge */
         .mod-badge {
             font-size: 0.55rem;
             color: #00ffcc;
@@ -102,10 +165,10 @@
         <span id="myFriendCode" style="color: #888; font-size: 0.7rem;">Code: Loading...</span>
         <button class="btn btn-danger btn-sm" style="font-size: 0.6rem; padding: 0 4px;" onclick="logout()">LOGOUT</button>
     </div>
-    
+
     <div class="d-flex nav-tabs">
         <div class="nav-link active" id="tab-freq" onclick="switchTab('freq')">FREQ MODE (Public)</div>
-        <div class="nav-link" id="tab-dm" onclick="switchTab('dm')">SECURE DMs (Private)</div>
+        <div class="nav-link"        id="tab-dm"   onclick="switchTab('dm')">SECURE DMs (Private)</div>
     </div>
 
     <div id="freqControls" class="mb-2">
@@ -125,46 +188,72 @@
         </div>
         <div class="text-warning mb-1" style="font-size: 0.7rem;" id="activeDMDisplay">No active DM selected.</div>
     </div>
-    
+
     <div id="chatBox" class="chat-area"></div>
-    
-    <input type="text" id="msgInput" class="form-control form-control-sm bg-dark text-white mt-2" placeholder="Message..." onkeydown="if(event.key==='Enter') sendMessage()">
+
+    <!-- Hidden file picker — triggered by the 📎 button -->
+    <input type="file" id="fileInput" class="hidden" onchange="sendFile(this)">
+    <div class="input-row">
+        <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Attach file">📎</button>
+        <input type="text" id="msgInput" class="form-control form-control-sm bg-dark text-white"
+               placeholder="Message..." onkeydown="if(event.key==='Enter') sendMessage()" style="flex:1">
+    </div>
 </div>
 
 <script>
     // ─── APPWRITE CONFIGURATION ───────────────────────────────────────────────
-    const { Client, Account, Databases, ID, Query } = Appwrite;
+    const { Client, Account, Databases, Storage, ID, Query } = Appwrite;
     const client = new Client()
         .setEndpoint('https://nyc.cloud.appwrite.io/v1')
         .setProject('6a64f37300151ccefd0f');
 
     const account   = new Account(client);
     const databases = new Databases(client);
+    const storage   = new Storage(client);
 
-    const DB_ID              = '6a64f4430013964a8413';
-    const MSG_COLLECTION     = 'messages';
+    const DB_ID               = '6a64f4430013964a8413';
+    const MSG_COLLECTION      = 'messages';
     const CONTACTS_COLLECTION = 'contacts';
+    const BUCKET_ID           = 'YOUR_BUCKET_ID'; // ← Replace with your Appwrite Storage bucket ID
+    //  Note: for files sent on public frequencies the bucket must allow
+    //  guest-read so all participants can view the attachment URL.
+
+    const MAX_FILE_MB   = 10;
+    const MAX_FILE_SIZE = MAX_FILE_MB * 1024 * 1024;
 
     // ─── SIGHTENGINE CONFIGURATION ────────────────────────────────────────────
-    const SE_USER   = '1290337523';    // ← Replace with your Sightengine API user
-    const SE_SECRET = 'DJDFYB4t4wtYLf6RtWfKXvJRNe2ZC5z3';  // ← Replace with your Sightengine API secret
+    const SE_USER   = '1290337523';
+    const SE_SECRET = 'DJDFYB4t4wtYLf6RtWfKXvJRNe2ZC5z3';
 
-    // ─── STATE VARIABLES ─────────────────────────────────────────────────────
-    let currentUser          = null;
-    let currentMode          = 'freq';
-    let activeDMTarget       = null;
+    // ─── STATE ────────────────────────────────────────────────────────────────
+    let currentUser           = null;
+    let currentMode           = 'freq';
+    let activeDMTarget        = null;
     let dmRealtimeUnsubscribe = null;
-    let freq                 = "";
-    let lastTime             = 0;
-    let pollInterval         = null;
+    let freq                  = "";
+    let lastTime              = 0;
+    let pollInterval          = null;
+
+    // ─── UTILITIES ────────────────────────────────────────────────────────────
+    function formatTime(date) {
+        return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    /** Builds an Appwrite Storage URL without needing the SDK return value. */
+    function getFileUrl(fileId, mode = 'view') {
+        return `https://nyc.cloud.appwrite.io/v1/storage/buckets/${BUCKET_ID}/files/${fileId}/${mode}?project=6a64f37300151ccefd0f`;
+    }
+
+    /** Prevents user text from being interpreted as HTML. */
+    function escapeHtml(str) {
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
 
     // ─── SIGHTENGINE MODERATION ───────────────────────────────────────────────
-    /**
-     * Checks text against Sightengine for profanity, drug, and weapon content.
-     * Returns { flagged: bool, reasons: string[] }.
-     * Fails open (returns flagged: false) on any API/network error so a
-     * service outage never silently breaks the chat.
-     */
     async function checkContent(text) {
         try {
             const params = new URLSearchParams({
@@ -174,7 +263,6 @@
                 api_user:   SE_USER,
                 api_secret: SE_SECRET
             });
-
             const res  = await fetch(`https://api.sightengine.com/1.0/text/check.json?${params}`);
             const data = await res.json();
 
@@ -221,10 +309,7 @@
         try {
             await account.create(ID.unique(), email, pass);
             await login();
-        } catch (e) {
-            alert("Registration failed.");
-            console.error(e);
-        }
+        } catch (e) { alert("Registration failed."); console.error(e); }
     }
 
     async function login() {
@@ -234,10 +319,7 @@
             await account.createEmailSession(email, pass);
             currentUser = await account.get();
             showMainPanel();
-        } catch (e) {
-            alert("Login failed: " + e.message);
-            console.error(e);
-        }
+        } catch (e) { alert("Login failed: " + e.message); console.error(e); }
     }
 
     async function logout() {
@@ -299,13 +381,12 @@
                 const j = JSON.parse(line);
                 if (j.time > lastTime) {
                     lastTime = j.time;
-                    await handlePacket(j.message); // await so moderation runs in order
+                    await handlePacket(j.message);
                 }
             }
         } catch (error) { console.error("Signal lost:", error); }
     }
 
-    // Now async — awaits Sightengine before rendering incoming freq messages
     async function handlePacket(raw) {
         if (!raw.includes("||")) return;
         const [sender, msg] = raw.split("||");
@@ -313,19 +394,67 @@
         if (sender === me) return;
 
         const cmd = msg.split("::");
-        if (cmd[0] === "CHAT") {
-            const text = cmd[1];
 
-            // ── INCOMING MODERATION (FREQ) ──
-            const check = await checkContent(text);
+        if (cmd[0] === "CHAT") {
+            // ── INCOMING TEXT MODERATION (FREQ only) ──
+            const check = await checkContent(cmd[1]);
             if (check.flagged) {
                 addChat("SYS", `⚠️ Incoming message from [${sender}] blocked — ${check.reasons.join('; ')}`);
                 return;
             }
+            addChat(sender, cmd[1]);
 
-            addChat(sender, text);
+        } else if (cmd[0] === "FILE") {
+            // Incoming file attachment — reconstruct the __FILE__ payload and render
+            const [, fileId, fileName, mimeType] = cmd;
+            const payload = `__FILE__${JSON.stringify({ id: fileId, name: fileName, type: mimeType })}`;
+            addChat(sender, payload);
+
         } else if (msg === "ALIVE") {
             addChat("SYS", `[${sender}] joined the frequency.`);
+        }
+    }
+
+    // ─── FILE SHARING ─────────────────────────────────────────────────────────
+    async function sendFile(input) {
+        const file = input.files[0];
+        if (!file) return;
+        input.value = ''; // reset so the same file can be re-selected
+
+        if (file.size > MAX_FILE_SIZE) {
+            addChat("SYS", `⚠️ File too large — max ${MAX_FILE_MB} MB.`);
+            return;
+        }
+
+        addChat("SYS", `Uploading ${escapeHtml(file.name)}...`);
+
+        try {
+            const result  = await storage.createFile(BUCKET_ID, ID.unique(), file);
+            const fileId  = result.$id;
+            const payload = `__FILE__${JSON.stringify({ id: fileId, name: file.name, type: file.type })}`;
+
+            if (currentMode === 'freq') {
+                if (freq) {
+                    // Transmit as FILE:: packet; recipients reconstruct the URL from their BUCKET_ID
+                    await transmit(`FILE::${fileId}::${file.name}::${file.type}`);
+                    addChat("ME", payload);
+                } else {
+                    addChat("SYS", "ERROR: Join a frequency first.");
+                }
+            } else if (currentMode === 'dm') {
+                if (activeDMTarget) {
+                    await databases.createDocument(DB_ID, MSG_COLLECTION, ID.unique(), {
+                        senderId:   currentUser.$id,
+                        receiverId: activeDMTarget,
+                        text:       payload
+                    });
+                    addChat("ME", payload);
+                } else {
+                    addChat("SYS", "ERROR: Select a contact first.");
+                }
+            }
+        } catch (e) {
+            addChat("SYS", `ERROR uploading: ${e.message}`);
         }
     }
 
@@ -356,10 +485,10 @@
                 return;
             }
             res.documents.forEach(doc => {
-                const el       = document.createElement('div');
-                el.className   = 'contact-item';
-                el.innerText   = ` ${doc.friendName} (ID: ${doc.friendId})`;
-                el.onclick     = () => openDM(doc.friendId, doc.friendName);
+                const el     = document.createElement('div');
+                el.className = 'contact-item';
+                el.innerText = `📁 ${doc.friendName} (ID: ${doc.friendId})`;
+                el.onclick   = () => openDM(doc.friendId, doc.friendName);
                 list.appendChild(el);
             });
         } catch (e) { console.error(e); }
@@ -370,7 +499,7 @@
         document.getElementById('activeDMDisplay').innerText = `TARGET LOCKED: ${targetName}`;
         document.getElementById('chatBox').innerHTML = "";
 
-        // Load history — no re-moderation on already-stored messages
+        // Load history with stored timestamps
         try {
             const messages = await databases.listDocuments(DB_ID, MSG_COLLECTION, [
                 Query.orderAsc('$createdAt'),
@@ -379,12 +508,15 @@
             messages.documents.forEach(doc => {
                 if ((doc.senderId === currentUser.$id && doc.receiverId === targetId) ||
                     (doc.senderId === targetId        && doc.receiverId === currentUser.$id)) {
-                    addChat(doc.senderId === currentUser.$id ? "ME" : targetName, doc.text);
+                    addChat(
+                        doc.senderId === currentUser.$id ? "ME" : targetName,
+                        doc.text,
+                        doc.$createdAt  // ← real stored timestamp
+                    );
                 }
             });
         } catch (e) { console.error("Error fetching DMs", e); }
 
-        // Real-time subscription for new incoming DMs
         if (dmRealtimeUnsubscribe) dmRealtimeUnsubscribe();
 
         dmRealtimeUnsubscribe = client.subscribe(
@@ -393,7 +525,7 @@
                 if (response.events.includes('databases.*.collections.*.documents.*.create')) {
                     const doc = response.payload;
                     if (doc.senderId === targetId && doc.receiverId === currentUser.$id) {
-                        addChat(targetName, doc.text); // DMs are not moderated
+                        addChat(targetName, doc.text, doc.$createdAt); // No moderation on DMs
                     }
                 }
             }
@@ -412,9 +544,9 @@
                 const check = await checkContent(v);
                 if (check.flagged) {
                     addChat("SYS", `⚠️ Your message was blocked — ${check.reasons.join('; ')}`);
-                    return; // Keep text in input so user can edit it
+                    return; // leave text in input so user can edit
                 }
-                transmit(`CHAT::${v}`);
+                await transmit(`CHAT::${v}`);
                 addChat("ME", v);
                 inputField.value = "";
             } else {
@@ -438,14 +570,52 @@
     }
 
     // ─── CHAT RENDERER ────────────────────────────────────────────────────────
-    function addChat(user, text) {
+    /**
+     * Renders a message into the chat area.
+     * @param {string} user          - Sender label ("ME", "SYS", or a username).
+     * @param {string} text          - Raw text or __FILE__{json} payload.
+     * @param {string} [isoTimestamp] - ISO 8601 string; defaults to now.
+     */
+    function addChat(user, text, isoTimestamp) {
         const box       = document.getElementById('chatBox');
         const isSys     = user === "SYS";
-        const userStyle = isSys        ? "color: #ffcc00;"
+        const userStyle = isSys         ? "color: #ffcc00;"
                         : user === "ME" ? "color: #fff;"
-                        :                 "color: #00ffcc;";
-        box.innerHTML += `<div class="msg"><b style="${userStyle}">${user}:</b> ${text}</div>`;
-        box.scrollTop  = box.scrollHeight;
+                        :                  "color: #00ffcc;";
+        const timeStr   = formatTime(isoTimestamp || new Date());
+
+        // Render body: detect file attachments, otherwise escape plain text
+        let bodyHtml;
+        if (!isSys && text.startsWith('__FILE__')) {
+            try {
+                const meta = JSON.parse(text.slice(8)); // strip '__FILE__'
+                if (meta.type && meta.type.startsWith('image/')) {
+                    const viewUrl = getFileUrl(meta.id);
+                    bodyHtml = `<a href="${viewUrl}" target="_blank" rel="noopener">
+                                    <img class="msg-img" src="${viewUrl}" alt="${escapeHtml(meta.name)}">
+                                </a>`;
+                } else {
+                    const dlUrl = getFileUrl(meta.id, 'download');
+                    bodyHtml = `<a class="msg-file" href="${dlUrl}" target="_blank" rel="noopener">
+                                    📄 ${escapeHtml(meta.name)}
+                                </a>`;
+                }
+            } catch {
+                bodyHtml = '<em style="color:#444">[Attachment]</em>';
+            }
+        } else {
+            bodyHtml = escapeHtml(text);
+        }
+
+        box.innerHTML += `
+            <div class="msg">
+                <div class="msg-header">
+                    <b style="${userStyle}">${escapeHtml(user)}</b>
+                    <span class="timestamp">${timeStr}</span>
+                </div>
+                <div class="msg-body">${bodyHtml}</div>
+            </div>`;
+        box.scrollTop = box.scrollHeight;
     }
 </script>
 </body>
