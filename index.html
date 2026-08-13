@@ -162,13 +162,13 @@
 <div id="mainPanel" class="panel hidden">
     <div class="panel-head">
         <span>Radio <span class="mod-badge">MODERATED</span></span>
-        <span id="myFriendCode" style="color: #888; font-size: 0.7rem;">Code: Loading...</span>
+        <span id="myFriendCode" style="color: #888; font-size: 0.7rem;">Loading...</span>
         <button class="btn btn-danger btn-sm" style="font-size: 0.6rem; padding: 0 4px;" onclick="logout()">LOGOUT</button>
     </div>
 
     <div class="d-flex nav-tabs">
-        <div class="nav-link active" id="tab-freq" onclick="switchTab('freq')">FREQ MODE (Public)</div>
-        <div class="nav-link"        id="tab-dm"   onclick="switchTab('dm')">SECURE DMs (Private)</div>
+        <div class="nav-link active" id="tab-freq" onclick="switchTab('freq')">RADIO</div>
+        <div class="nav-link"        id="tab-dm"   onclick="switchTab('dm')">DM</div>
     </div>
 
     <div id="freqControls" class="mb-2">
@@ -466,7 +466,7 @@
             await databases.createDocument(DB_ID, CONTACTS_COLLECTION, ID.unique(), {
                 userId:     currentUser.$id,
                 friendId:   code,
-                friendName: `Agent_${code.substring(0, 4)}`
+                friendName: `${code.substring(0, 4)}`
             });
             document.getElementById('friendCodeInput').value = "";
             loadContacts();
@@ -487,7 +487,7 @@
             res.documents.forEach(doc => {
                 const el     = document.createElement('div');
                 el.className = 'contact-item';
-                el.innerText = `📁 ${doc.friendName} (ID: ${doc.friendId})`;
+                el.innerText = ` ${doc.friendName} (ID: ${doc.friendId})`;
                 el.onclick   = () => openDM(doc.friendId, doc.friendName);
                 list.appendChild(el);
             });
@@ -496,7 +496,7 @@
 
     async function openDM(targetId, targetName) {
         activeDMTarget = targetId;
-        document.getElementById('activeDMDisplay').innerText = `TARGET LOCKED: ${targetName}`;
+        document.getElementById('activeDMDisplay').innerText = `Selected Contact: ${targetName}`;
         document.getElementById('chatBox').innerHTML = "";
 
         // Load history with stored timestamps
