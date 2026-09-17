@@ -447,40 +447,48 @@
     }
 
     async function loadContactsAndGroups() {
-        const list = document.getElementById('contactsList');
-        list.innerHTML = "";
+    const list = document.getElementById('contactsList');
+    list.innerHTML = "";
 
-        try {
-            const friendsRes = await databases.listDocuments(DB_ID, CONTACTS_COLLECTION, [
-                Query.equal('userId', currentUser.$id)
-            ]);
-            const groupsRes = await databases.listDocuments(DB_ID, GROUPS_COLLECTION, [
-                Query.search('members', currentUser.$id)
-            ]);
+    try {
+        // Load Friends
+        const friendsRes = await databases.listDocuments(DB_ID, CONTACTS_COLLECTION, [
+            Query.equal('userId', currentUser.$id)
+        ]);
 
-            if (friendsRes.documents.length === 0 && groupsRes.documents.length === 0) {
-                list.innerHTML = "<div class='text-muted p-1'>No contacts or groups found.</div>";
-                return;
-            }
+        // Load Groups (Query.equal checks if the array contains the user ID)
+        const groupsRes = await databases.listDocuments(DB_ID, GROUPS_COLLECTION, [
+            Query.equal('members', currentUser.$id)
+        ]);
 
-            friendsRes.documents.forEach(doc => {
-                const el = document.createElement('div');
-                el.className = 'contact-item';
-                el.innerText = `👤 ${doc.friendName} (${doc.friendId.substring(0, 5)})`;
-                el.onclick = () => openDM(doc.friendId, doc.friendName);
-                list.appendChild(el);
-            });
+        if (friendsRes.documents.length === 0 && groupsRes.documents.length === 0) {
+            list.innerHTML = "<div class='text-muted p-1'>No contacts or groups found.</div>";
+            return;
+        }
 
-            groupsRes.documents.forEach(doc => {
-                const el = document.createElement('div');
-                el.className = 'contact-item';
-                el.style.color = '#00ffcc';
-                el.innerText = `👥 [Group] ${doc.name}`;
-                el.onclick = () => openGroup(doc.$id, doc.name);
-                list.appendChild(el);
-            });
-        } catch (e) { console.error("Error loading list:", e); }
+        // Render Contacts
+        friendsRes.documents.forEach(doc => {
+            const el = document.createElement('div');
+            el.className = 'contact-item';
+            el.innerText = `👤 ${doc.friendName} (${doc.friendId.substring(0, 5)})`;
+            el.onclick = () => openDM(doc.friendId, doc.friendName);
+            list.appendChild(el);
+        });
+
+        // Render Groups
+        groupsRes.documents.forEach(doc => {
+            const el = document.createElement('div');
+            el.className = 'contact-item';
+            el.style.color = '#00ffcc';
+            el.innerText = `👥 [Group] ${doc.name}`;
+            el.onclick = () => openGroup(doc.$id, doc.name);
+            list.appendChild(el);
+        });
+    } catch (e) {
+        console.error("Error loading list:", e);
+        list.innerHTML = `<div class='text-danger p-1' style='font-size:0.65rem;'>Failed to load list: ${e.message}</div>`;
     }
+}
 
     async function openDM(targetId, targetName) {
         activeTargetType = 'user';
