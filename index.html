@@ -477,16 +477,11 @@ async function editNickname(docId, currentName) {
     list.innerHTML = "Loading...";
 
     try {
-        // Fetch without queries to test permissions and baseline connectivity
         const friendsRes = await databases.listDocuments(DB_ID, CONTACTS_COLLECTION);
         const groupsRes  = await databases.listDocuments(DB_ID, GROUPS_COLLECTION);
 
-        console.log("Fetched raw contacts:", friendsRes.documents);
-        console.log("Fetched raw groups:", groupsRes.documents);
-
         list.innerHTML = "";
 
-        // Client-side filtering as a fallback
         const myContacts = friendsRes.documents.filter(doc => doc.userId === currentUser.$id);
         const myGroups   = groupsRes.documents.filter(doc => 
             Array.isArray(doc.members) ? doc.members.includes(currentUser.$id) : doc.members === currentUser.$id
@@ -497,31 +492,40 @@ async function editNickname(docId, currentName) {
             return;
         }
 
+        // Render Contacts with Edit Nickname Pencil
         myContacts.forEach(doc => {
-    const el = document.createElement('div');
-    el.className = 'contact-item d-flex justify-content-between align-items-center';
+            const el = document.createElement('div');
+            el.className = 'contact-item';
+            el.style.display = 'flex';
+            el.style.justifyContent = 'space-between';
+            el.style.alignItems = 'center';
+            el.style.width = '100%';
 
-    const nameSpan = document.createElement('span');
-    nameSpan.innerText = `👤 ${doc.friendName} (${doc.friendId.substring(0, 5)})`;
-    nameSpan.style.flex = '1';
-    nameSpan.onclick = () => openDM(doc.friendId, doc.friendName);
+            const nameSpan = document.createElement('span');
+            nameSpan.innerText = `👤 ${doc.friendName} (${doc.friendId.substring(0, 5)})`;
+            nameSpan.style.flex = '1';
+            nameSpan.style.overflow = 'hidden';
+            nameSpan.style.textOverflow = 'ellipsis';
+            nameSpan.style.whiteSpace = 'nowrap';
+            nameSpan.onclick = () => openDM(doc.friendId, doc.friendName);
 
-    const editBtn = document.createElement('button');
-    editBtn.className = 'btn btn-link text-warning p-0 ms-2';
-    editBtn.style.fontSize = '0.7rem';
-    editBtn.style.textDecoration = 'none';
-    editBtn.innerText = '✏️';
-    editBtn.title = 'Edit Nickname';
-    editBtn.onclick = (e) => {
-        e.stopPropagation(); // Prevents opening DM channel when clicking edit icon
-        editNickname(doc.$id, doc.friendName);
-    };
+            const editBtn = document.createElement('span');
+            editBtn.innerHTML = '✏️';
+            editBtn.title = 'Edit Nickname';
+            editBtn.style.cursor = 'pointer';
+            editBtn.style.paddingLeft = '6px';
+            editBtn.style.fontSize = '0.75rem';
+            editBtn.onclick = (e) => {
+                e.stopPropagation(); // Prevents opening the DM when clicking the icon
+                editNickname(doc.$id, doc.friendName);
+            };
 
-    el.appendChild(nameSpan);
-    el.appendChild(editBtn);
-    list.appendChild(el);
-});
+            el.appendChild(nameSpan);
+            el.appendChild(editBtn);
+            list.appendChild(el);
+        });
 
+        // Render Groups
         myGroups.forEach(doc => {
             const el = document.createElement('div');
             el.className = 'contact-item';
