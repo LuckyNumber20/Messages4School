@@ -187,6 +187,11 @@
             <input type="text" id="groupNameInput" class="form-control bg-dark text-white" placeholder="Group Name">
             <button class="btn btn-warning" onclick="createGroup()">CREATE GROUP</button>
         </div>
+        <div class="input-group input-group-sm mb-2">
+    <input type="text" id="friendCodeInput" class="form-control bg-dark text-white" placeholder="Friend Code">
+    <input type="text" id="friendNicknameInput" class="form-control bg-dark text-white" placeholder="Nickname (Optional)">
+    <button class="btn btn-info" onclick="addFriend()">ADD CONTACT</button>
+</div>
         <div class="contacts-sidebar text-white" id="contactsList">
             <div class="text-muted">No contacts or groups found.</div>
         </div>
@@ -419,19 +424,40 @@
     }
 
     // DM & GROUPS LOGIC
-    async function addFriend() {
-        const code = document.getElementById('friendCodeInput').value.trim();
-        if (!code || code === currentUser.$id) return alert("Invalid code.");
-        try {
-            await databases.createDocument(DB_ID, CONTACTS_COLLECTION, ID.unique(), {
-                userId:     currentUser.$id,
-                friendId:   code,
-                friendName: `${code.substring(0, 4)}`
-            });
-            document.getElementById('friendCodeInput').value = "";
-            loadContactsAndGroups();
-        } catch (e) { alert("Failed to add contact: " + e.message); }
-    }
+    // Add contact with custom nickname support
+async function addFriend() {
+    const code = document.getElementById('friendCodeInput').value.trim();
+    const customNickname = document.getElementById('friendNicknameInput').value.trim();
+
+    if (!code || code === currentUser.$id) return alert("Invalid code.");
+
+    // Fall back to short ID if no nickname is entered
+    const displayName = customNickname || `${code.substring(0, 4)}`;
+
+    try {
+        await databases.createDocument(DB_ID, CONTACTS_COLLECTION, ID.unique(), {
+            userId:     currentUser.$id,
+            friendId:   code,
+            friendName: displayName
+        });
+        document.getElementById('friendCodeInput').value = "";
+        document.getElementById('friendNicknameInput').value = "";
+        loadContactsAndGroups();
+    } catch (e) { alert("Failed to add contact: " + e.message); }
+}
+
+// Edit existing contact nickname
+async function editNickname(docId, currentName) {
+    const newName = prompt("Enter new nickname:", currentName);
+    if (!newName || newName.trim() === "" || newName === currentName) return;
+
+    try {
+        await databases.updateDocument(DB_ID, CONTACTS_COLLECTION, docId, {
+            friendName: newName.trim()
+        });
+        loadContactsAndGroups();
+    } catch (e) { alert("Failed to update nickname: " + e.message); }
+}
 
     async function createGroup() {
         const groupName = document.getElementById('groupNameInput').value.trim();
@@ -472,12 +498,29 @@
         }
 
         myContacts.forEach(doc => {
-            const el = document.createElement('div');
-            el.className = 'contact-item';
-            el.innerText = `👤 ${doc.friendName} (${doc.friendId.substring(0, 5)})`;
-            el.onclick = () => openDM(doc.friendId, doc.friendName);
-            list.appendChild(el);
-        });
+    const el = document.createElement('div');
+    el.className = 'contact-item d-flex justify-content-between align-items-center';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.innerText = `👤 ${doc.friendName} (${doc.friendId.substring(0, 5)})`;
+    nameSpan.style.flex = '1';
+    nameSpan.onclick = () => openDM(doc.friendId, doc.friendName);
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-link text-warning p-0 ms-2';
+    editBtn.style.fontSize = '0.7rem';
+    editBtn.style.textDecoration = 'none';
+    editBtn.innerText = '✏️';
+    editBtn.title = 'Edit Nickname';
+    editBtn.onclick = (e) => {
+        e.stopPropagation(); // Prevents opening DM channel when clicking edit icon
+        editNickname(doc.$id, doc.friendName);
+    };
+
+    el.appendChild(nameSpan);
+    el.appendChild(editBtn);
+    list.appendChild(el);
+});
 
         myGroups.forEach(doc => {
             const el = document.createElement('div');
