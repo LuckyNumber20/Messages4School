@@ -53,7 +53,7 @@
             font-family: 'Consolas', monospace;
         }
 
-        /* ── Message layout ── */
+        /* Message layout */
         .msg {
             border-bottom: 1px solid #1a1a1a;
             margin-bottom: 4px;
@@ -73,7 +73,7 @@
         }
         .msg-body { margin-top: 2px; }
 
-        /* ── File / image attachments ── */
+        /* File / image attachments */
         .msg-img {
             max-width: 220px;
             max-height: 160px;
@@ -101,7 +101,7 @@
         }
         .msg-file:hover { border-color: #00ffcc; color: #00ffcc; }
 
-        /* ── Input row ── */
+        /* Input row */
         .input-row {
             display: flex;
             gap: 4px;
@@ -122,14 +122,14 @@
         }
         .attach-btn:hover { color: #00ffcc; border-color: #00ffcc; }
 
-        /* ── Misc ── */
+        /* Misc */
         .hidden { display: none !important; }
         .nav-tabs { border-bottom: 1px solid #333; margin-bottom: 10px; }
         .nav-link { color: #888; padding: 5px 10px; font-size: 0.8rem; cursor: pointer; }
         .nav-link.active { color: #00ffcc; border-bottom: 2px solid #00ffcc; }
-        .contacts-sidebar { max-height: 150px; overflow-y: auto; border: 1px solid #333; margin-bottom: 10px; padding: 5px; background: #0a0a0a; }
-        .contact-item { cursor: pointer; padding: 2px 5px; }
-        .contact-item:hover { background: #222; }
+        .contacts-sidebar { max-height: 140px; overflow-y: auto; border: 1px solid #333; margin-bottom: 10px; padding: 5px; background: #0a0a0a; }
+        .contact-item { cursor: pointer; padding: 3px 5px; font-size: 0.72rem; border-bottom: 1px solid #1a1a1a; }
+        .contact-item:hover { background: #222; color: #00ffcc; }
         .mod-badge {
             font-size: 0.55rem;
             color: #00ffcc;
@@ -168,7 +168,7 @@
 
     <div class="d-flex nav-tabs">
         <div class="nav-link active" id="tab-freq" onclick="switchTab('freq')">RADIO</div>
-        <div class="nav-link"        id="tab-dm"   onclick="switchTab('dm')">DM</div>
+        <div class="nav-link"        id="tab-dm"   onclick="switchTab('dm')">DM / GROUPS</div>
     </div>
 
     <div id="freqControls" class="mb-2">
@@ -180,18 +180,24 @@
 
     <div id="dmControls" class="hidden mb-2">
         <div class="input-group input-group-sm mb-2">
-            <input type="text" id="friendCodeInput" class="form-control bg-dark text-white" placeholder="Enter Friend Code">
+            <input type="text" id="friendCodeInput" class="form-control bg-dark text-white" placeholder="Friend Code">
             <button class="btn btn-info" onclick="addFriend()">ADD CONTACT</button>
         </div>
-        <div class="contacts-sidebar text-white" id="contactsList" style="font-size: 0.75rem;">
-            <div class="text-muted">No contacts yet.</div>
+        <div class="input-group input-group-sm mb-2">
+            <input type="text" id="groupNameInput" class="form-control bg-dark text-white" placeholder="Group Name">
+            <button class="btn btn-warning" onclick="createGroup()">CREATE GROUP</button>
         </div>
-        <div class="text-warning mb-1" style="font-size: 0.7rem;" id="activeDMDisplay">No active DM selected.</div>
+        <div class="contacts-sidebar text-white" id="contactsList">
+            <div class="text-muted">No contacts or groups found.</div>
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="text-warning" style="font-size: 0.7rem;" id="activeDMDisplay">No target selected.</span>
+            <button id="videoCallBtn" class="btn btn-outline-success btn-sm hidden" style="font-size: 0.65rem; padding: 1px 6px;" onclick="startVideoCall()">📹 CALL</button>
+        </div>
     </div>
 
     <div id="chatBox" class="chat-area"></div>
 
-    <!-- Hidden file picker — triggered by the 📎 button -->
     <input type="file" id="fileInput" class="hidden" onchange="sendFile(this)">
     <div class="input-row">
         <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Attach file">📎</button>
@@ -200,8 +206,16 @@
     </div>
 </div>
 
+<div id="videoModal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.92); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+    <div style="position: relative; width: 85%; max-width: 600px;">
+        <video id="remoteVideo" autoplay playsinline style="width: 100%; height: 350px; border: 1px solid #00ffcc; background: #000; border-radius: 4px; object-fit: cover;"></video>
+        <video id="localVideo" autoplay playsinline muted style="width: 130px; height: 90px; position: absolute; bottom: 10px; right: 10px; border: 1px solid #fff; border-radius: 4px; background: #222; object-fit: cover;"></video>
+    </div>
+    <button class="btn btn-danger btn-sm mt-3" onclick="endVideoCall()">END CALL</button>
+</div>
+
 <script>
-    // ─── APPWRITE CONFIGURATION ───────────────────────────────────────────────
+    // APPWRITE CONFIGURATION
     const { Client, Account, Databases, Storage, ID, Query } = Appwrite;
     const client = new Client()
         .setEndpoint('https://nyc.cloud.appwrite.io/v1')
@@ -214,37 +228,43 @@
     const DB_ID               = '6a64f4430013964a8413';
     const MSG_COLLECTION      = 'messages';
     const CONTACTS_COLLECTION = 'contacts';
-    const BUCKET_ID           = 'YOUR_BUCKET_ID'; // ← Replace with your Appwrite Storage bucket ID
-    //  Note: for files sent on public frequencies the bucket must allow
-    //  guest-read so all participants can view the attachment URL.
+    const GROUPS_COLLECTION   = 'groups';     // Create this collection in Console
+    const SIGNAL_COLLECTION   = 'signaling';  // Create this collection in Console
+    const BUCKET_ID           = 'YOUR_BUCKET_ID';
 
     const MAX_FILE_MB   = 10;
     const MAX_FILE_SIZE = MAX_FILE_MB * 1024 * 1024;
 
-    // ─── SIGHTENGINE CONFIGURATION ────────────────────────────────────────────
+    // SIGHTENGINE CONFIGURATION
     const SE_USER   = '1290337523';
     const SE_SECRET = 'DJDFYB4t4wtYLf6RtWfKXvJRNe2ZC5z3';
 
-    // ─── STATE ────────────────────────────────────────────────────────────────
+    // STATE
     let currentUser           = null;
     let currentMode           = 'freq';
+    let activeTargetType      = null; // 'user' or 'group'
     let activeDMTarget        = null;
+    let activeGroupId         = null;
     let dmRealtimeUnsubscribe = null;
     let freq                  = "";
     let lastTime              = 0;
     let pollInterval          = null;
 
-    // ─── UTILITIES ────────────────────────────────────────────────────────────
+    // WEBRTC STATE
+    let localStream           = null;
+    let peerConnection        = null;
+    let signalRealtimeUnsub   = null;
+    const rtcConfig           = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+    // UTILITIES
     function formatTime(date) {
         return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
 
-    /** Builds an Appwrite Storage URL without needing the SDK return value. */
     function getFileUrl(fileId, mode = 'view') {
         return `https://nyc.cloud.appwrite.io/v1/storage/buckets/${BUCKET_ID}/files/${fileId}/${mode}?project=6a64f37300151ccefd0f`;
     }
 
-    /** Prevents user text from being interpreted as HTML. */
     function escapeHtml(str) {
         return str
             .replace(/&/g, '&amp;')
@@ -253,7 +273,7 @@
             .replace(/"/g, '&quot;');
     }
 
-    // ─── SIGHTENGINE MODERATION ───────────────────────────────────────────────
+    // MODERATION
     async function checkContent(text) {
         try {
             const params = new URLSearchParams({
@@ -266,33 +286,20 @@
             const res  = await fetch(`https://api.sightengine.com/1.0/text/check.json?${params}`);
             const data = await res.json();
 
-            if (data.status !== 'success') {
-                console.warn('[Sightengine] Unexpected response:', data);
-                return { flagged: false, reasons: [] };
-            }
+            if (data.status !== 'success') return { flagged: false, reasons: [] };
 
             const reasons = [];
-            if (data.profanity?.matches?.length > 0) {
-                const words = data.profanity.matches.map(m => `"${m.match}"`).join(', ');
-                reasons.push(`profanity — ${words}`);
-            }
-            if (data.drug?.matches?.length > 0) {
-                const words = data.drug.matches.map(m => `"${m.match}"`).join(', ');
-                reasons.push(`drug references — ${words}`);
-            }
-            if (data.weapon?.matches?.length > 0) {
-                const words = data.weapon.matches.map(m => `"${m.match}"`).join(', ');
-                reasons.push(`weapon references — ${words}`);
-            }
+            if (data.profanity?.matches?.length > 0) reasons.push(`profanity`);
+            if (data.drug?.matches?.length > 0) reasons.push(`drug references`);
+            if (data.weapon?.matches?.length > 0) reasons.push(`weapon references`);
 
             return { flagged: reasons.length > 0, reasons };
         } catch (e) {
-            console.error('[Sightengine] Check error:', e);
-            return { flagged: false, reasons: [] }; // fail open
+            return { flagged: false, reasons: [] };
         }
     }
 
-    // ─── INITIALIZATION ───────────────────────────────────────────────────────
+    // INITIALIZATION
     window.onload = async () => {
         try {
             currentUser = await account.get();
@@ -302,7 +309,7 @@
         }
     };
 
-    // ─── AUTHENTICATION ───────────────────────────────────────────────────────
+    // AUTHENTICATION
     async function register() {
         const email = document.getElementById('emailInput').value;
         const pass  = document.getElementById('passInput').value;
@@ -331,10 +338,11 @@
         document.getElementById('authPanel').classList.add('hidden');
         document.getElementById('mainPanel').classList.remove('hidden');
         document.getElementById('myFriendCode').innerText = `Code: ${currentUser.$id}`;
-        loadContacts();
+        loadContactsAndGroups();
+        initSignalingListener();
     }
 
-    // ─── UI ───────────────────────────────────────────────────────────────────
+    // UI TABS
     function switchTab(mode) {
         currentMode = mode;
         document.getElementById('tab-freq').classList.toggle('active', mode === 'freq');
@@ -345,14 +353,14 @@
 
         if (mode === 'dm') {
             if (pollInterval) clearInterval(pollInterval);
-            addChat("SYS", "Switched to Secure Direct Messaging mode. Select a contact.");
+            addChat("SYS", "Select a contact or group to begin.");
         } else {
             if (dmRealtimeUnsubscribe) { dmRealtimeUnsubscribe(); dmRealtimeUnsubscribe = null; }
             addChat("SYS", "Switched to Public Frequency mode.");
         }
     }
 
-    // ─── FREQUENCY MODE ───────────────────────────────────────────────────────
+    // FREQUENCY MODE
     function joinFreq() {
         freq = document.getElementById('freqInput').value.trim();
         if (freq) {
@@ -394,71 +402,23 @@
         if (sender === me) return;
 
         const cmd = msg.split("::");
-
         if (cmd[0] === "CHAT") {
-            // ── INCOMING TEXT MODERATION (FREQ only) ──
             const check = await checkContent(cmd[1]);
             if (check.flagged) {
-                addChat("SYS", `⚠️ Incoming message from [${sender}] blocked — ${check.reasons.join('; ')}`);
+                addChat("SYS", `⚠️ Message blocked — ${check.reasons.join('; ')}`);
                 return;
             }
             addChat(sender, cmd[1]);
-
         } else if (cmd[0] === "FILE") {
-            // Incoming file attachment — reconstruct the __FILE__ payload and render
             const [, fileId, fileName, mimeType] = cmd;
             const payload = `__FILE__${JSON.stringify({ id: fileId, name: fileName, type: mimeType })}`;
             addChat(sender, payload);
-
         } else if (msg === "ALIVE") {
             addChat("SYS", `[${sender}] joined the frequency.`);
         }
     }
 
-    // ─── FILE SHARING ─────────────────────────────────────────────────────────
-    async function sendFile(input) {
-        const file = input.files[0];
-        if (!file) return;
-        input.value = ''; // reset so the same file can be re-selected
-
-        if (file.size > MAX_FILE_SIZE) {
-            addChat("SYS", `⚠️ File too large — max ${MAX_FILE_MB} MB.`);
-            return;
-        }
-
-        addChat("SYS", `Uploading ${escapeHtml(file.name)}...`);
-
-        try {
-            const result  = await storage.createFile(BUCKET_ID, ID.unique(), file);
-            const fileId  = result.$id;
-            const payload = `__FILE__${JSON.stringify({ id: fileId, name: file.name, type: file.type })}`;
-
-            if (currentMode === 'freq') {
-                if (freq) {
-                    // Transmit as FILE:: packet; recipients reconstruct the URL from their BUCKET_ID
-                    await transmit(`FILE::${fileId}::${file.name}::${file.type}`);
-                    addChat("ME", payload);
-                } else {
-                    addChat("SYS", "ERROR: Join a frequency first.");
-                }
-            } else if (currentMode === 'dm') {
-                if (activeDMTarget) {
-                    await databases.createDocument(DB_ID, MSG_COLLECTION, ID.unique(), {
-                        senderId:   currentUser.$id,
-                        receiverId: activeDMTarget,
-                        text:       payload
-                    });
-                    addChat("ME", payload);
-                } else {
-                    addChat("SYS", "ERROR: Select a contact first.");
-                }
-            }
-        } catch (e) {
-            addChat("SYS", `ERROR uploading: ${e.message}`);
-        }
-    }
-
-    // ─── DIRECT MESSAGE MODE ──────────────────────────────────────────────────
+    // DM & GROUPS LOGIC
     async function addFriend() {
         const code = document.getElementById('friendCodeInput').value.trim();
         if (!code || code === currentUser.$id) return alert("Invalid code.");
@@ -469,37 +429,68 @@
                 friendName: `${code.substring(0, 4)}`
             });
             document.getElementById('friendCodeInput').value = "";
-            loadContacts();
-        } catch (e) { alert("Failed to add: " + e.message); }
+            loadContactsAndGroups();
+        } catch (e) { alert("Failed to add contact: " + e.message); }
     }
 
-    async function loadContacts() {
+    async function createGroup() {
+        const groupName = document.getElementById('groupNameInput').value.trim();
+        if (!groupName) return alert("Enter a group name.");
         try {
-            const res  = await databases.listDocuments(DB_ID, CONTACTS_COLLECTION, [
+            await databases.createDocument(DB_ID, GROUPS_COLLECTION, ID.unique(), {
+                name: groupName,
+                members: [currentUser.$id]
+            });
+            document.getElementById('groupNameInput').value = "";
+            loadContactsAndGroups();
+        } catch (e) { alert("Failed to create group: " + e.message); }
+    }
+
+    async function loadContactsAndGroups() {
+        const list = document.getElementById('contactsList');
+        list.innerHTML = "";
+
+        try {
+            const friendsRes = await databases.listDocuments(DB_ID, CONTACTS_COLLECTION, [
                 Query.equal('userId', currentUser.$id)
             ]);
-            const list = document.getElementById('contactsList');
-            list.innerHTML = "";
-            if (res.documents.length === 0) {
-                list.innerHTML = "<div class='text-muted'>No contacts found.</div>";
+            const groupsRes = await databases.listDocuments(DB_ID, GROUPS_COLLECTION, [
+                Query.search('members', currentUser.$id)
+            ]);
+
+            if (friendsRes.documents.length === 0 && groupsRes.documents.length === 0) {
+                list.innerHTML = "<div class='text-muted p-1'>No contacts or groups found.</div>";
                 return;
             }
-            res.documents.forEach(doc => {
-                const el     = document.createElement('div');
+
+            friendsRes.documents.forEach(doc => {
+                const el = document.createElement('div');
                 el.className = 'contact-item';
-                el.innerText = ` ${doc.friendName} (ID: ${doc.friendId})`;
-                el.onclick   = () => openDM(doc.friendId, doc.friendName);
+                el.innerText = `👤 ${doc.friendName} (${doc.friendId.substring(0, 5)})`;
+                el.onclick = () => openDM(doc.friendId, doc.friendName);
                 list.appendChild(el);
             });
-        } catch (e) { console.error(e); }
+
+            groupsRes.documents.forEach(doc => {
+                const el = document.createElement('div');
+                el.className = 'contact-item';
+                el.style.color = '#00ffcc';
+                el.innerText = `👥 [Group] ${doc.name}`;
+                el.onclick = () => openGroup(doc.$id, doc.name);
+                list.appendChild(el);
+            });
+        } catch (e) { console.error("Error loading list:", e); }
     }
 
     async function openDM(targetId, targetName) {
-        activeDMTarget = targetId;
-        document.getElementById('activeDMDisplay').innerText = `Selected Contact: ${targetName}`;
+        activeTargetType = 'user';
+        activeDMTarget   = targetId;
+        activeGroupId    = null;
+
+        document.getElementById('activeDMDisplay').innerText = `Direct Chat: ${targetName}`;
+        document.getElementById('videoCallBtn').classList.remove('hidden');
         document.getElementById('chatBox').innerHTML = "";
 
-        // Load history with stored timestamps
         try {
             const messages = await databases.listDocuments(DB_ID, MSG_COLLECTION, [
                 Query.orderAsc('$createdAt'),
@@ -508,31 +499,100 @@
             messages.documents.forEach(doc => {
                 if ((doc.senderId === currentUser.$id && doc.receiverId === targetId) ||
                     (doc.senderId === targetId        && doc.receiverId === currentUser.$id)) {
-                    addChat(
-                        doc.senderId === currentUser.$id ? "ME" : targetName,
-                        doc.text,
-                        doc.$createdAt  // ← real stored timestamp
-                    );
+                    addChat(doc.senderId === currentUser.$id ? "ME" : targetName, doc.text, doc.$createdAt);
                 }
             });
         } catch (e) { console.error("Error fetching DMs", e); }
 
         if (dmRealtimeUnsubscribe) dmRealtimeUnsubscribe();
-
         dmRealtimeUnsubscribe = client.subscribe(
             `databases.${DB_ID}.collections.${MSG_COLLECTION}.documents`,
             response => {
                 if (response.events.includes('databases.*.collections.*.documents.*.create')) {
                     const doc = response.payload;
                     if (doc.senderId === targetId && doc.receiverId === currentUser.$id) {
-                        addChat(targetName, doc.text, doc.$createdAt); // No moderation on DMs
+                        addChat(targetName, doc.text, doc.$createdAt);
                     }
                 }
             }
         );
     }
 
-    // ─── SEND MESSAGE ─────────────────────────────────────────────────────────
+    async function openGroup(groupId, groupName) {
+        activeTargetType = 'group';
+        activeGroupId    = groupId;
+        activeDMTarget   = null;
+
+        document.getElementById('activeDMDisplay').innerText = `Group: ${groupName}`;
+        document.getElementById('videoCallBtn').classList.add('hidden');
+        document.getElementById('chatBox').innerHTML = "";
+
+        try {
+            const messages = await databases.listDocuments(DB_ID, MSG_COLLECTION, [
+                Query.equal('groupId', groupId),
+                Query.orderAsc('$createdAt'),
+                Query.limit(50)
+            ]);
+            messages.documents.forEach(doc => {
+                addChat(doc.senderId === currentUser.$id ? "ME" : doc.senderId.substring(0, 5), doc.text, doc.$createdAt);
+            });
+        } catch (e) { console.error("Error fetching group messages", e); }
+
+        if (dmRealtimeUnsubscribe) dmRealtimeUnsubscribe();
+        dmRealtimeUnsubscribe = client.subscribe(
+            `databases.${DB_ID}.collections.${MSG_COLLECTION}.documents`,
+            response => {
+                if (response.events.includes('databases.*.collections.*.documents.*.create')) {
+                    const doc = response.payload;
+                    if (doc.groupId === groupId && doc.senderId !== currentUser.$id) {
+                        addChat(doc.senderId.substring(0, 5), doc.text, doc.$createdAt);
+                    }
+                }
+            }
+        );
+    }
+
+    // FILE ATTACHMENTS
+    async function sendFile(input) {
+        const file = input.files[0];
+        if (!file) return;
+        input.value = '';
+
+        if (file.size > MAX_FILE_SIZE) return addChat("SYS", `⚠️ File too large — max ${MAX_FILE_MB} MB.`);
+
+        addChat("SYS", `Uploading ${escapeHtml(file.name)}...`);
+
+        try {
+            const result  = await storage.createFile(BUCKET_ID, ID.unique(), file);
+            const fileId  = result.$id;
+            const payload = `__FILE__${JSON.stringify({ id: fileId, name: file.name, type: file.type })}`;
+
+            if (currentMode === 'freq') {
+                if (freq) {
+                    await transmit(`FILE::${fileId}::${file.name}::${file.type}`);
+                    addChat("ME", payload);
+                }
+            } else if (currentMode === 'dm') {
+                if (activeTargetType === 'user' && activeDMTarget) {
+                    await databases.createDocument(DB_ID, MSG_COLLECTION, ID.unique(), {
+                        senderId: currentUser.$id,
+                        receiverId: activeDMTarget,
+                        text: payload
+                    });
+                    addChat("ME", payload);
+                } else if (activeTargetType === 'group' && activeGroupId) {
+                    await databases.createDocument(DB_ID, MSG_COLLECTION, ID.unique(), {
+                        senderId: currentUser.$id,
+                        groupId: activeGroupId,
+                        text: payload
+                    });
+                    addChat("ME", payload);
+                }
+            }
+        } catch (e) { addChat("SYS", `ERROR uploading: ${e.message}`); }
+    }
+
+    // SEND MESSAGE
     async function sendMessage() {
         const inputField = document.getElementById('msgInput');
         const v          = inputField.value.trim();
@@ -540,21 +600,15 @@
 
         if (currentMode === 'freq') {
             if (freq) {
-                // ── OUTGOING MODERATION (FREQ only) ──
                 const check = await checkContent(v);
-                if (check.flagged) {
-                    addChat("SYS", `⚠️ Your message was blocked — ${check.reasons.join('; ')}`);
-                    return; // leave text in input so user can edit
-                }
+                if (check.flagged) return addChat("SYS", `⚠️ Message blocked — ${check.reasons.join('; ')}`);
                 await transmit(`CHAT::${v}`);
                 addChat("ME", v);
                 inputField.value = "";
-            } else {
-                addChat("SYS", "ERROR: Join a frequency first.");
             }
         } else if (currentMode === 'dm') {
-            if (activeDMTarget) {
-                try {
+            try {
+                if (activeTargetType === 'user' && activeDMTarget) {
                     await databases.createDocument(DB_ID, MSG_COLLECTION, ID.unique(), {
                         senderId:   currentUser.$id,
                         receiverId: activeDMTarget,
@@ -562,20 +616,97 @@
                     });
                     addChat("ME", v);
                     inputField.value = "";
-                } catch (e) { addChat("SYS", "ERROR Sending DM: " + e.message); }
-            } else {
-                addChat("SYS", "ERROR: Select a contact from the list first.");
-            }
+                } else if (activeTargetType === 'group' && activeGroupId) {
+                    await databases.createDocument(DB_ID, MSG_COLLECTION, ID.unique(), {
+                        senderId: currentUser.$id,
+                        groupId:  activeGroupId,
+                        text:     v
+                    });
+                    addChat("ME", v);
+                    inputField.value = "";
+                }
+            } catch (e) { addChat("SYS", "ERROR Sending: " + e.message); }
         }
     }
 
-    // ─── CHAT RENDERER ────────────────────────────────────────────────────────
-    /**
-     * Renders a message into the chat area.
-     * @param {string} user          - Sender label ("ME", "SYS", or a username).
-     * @param {string} text          - Raw text or __FILE__{json} payload.
-     * @param {string} [isoTimestamp] - ISO 8601 string; defaults to now.
-     */
+    // WEBRTC VIDEO CALLS
+    async function startVideoCall() {
+        if (!activeDMTarget) return alert("Select a friend to call.");
+        document.getElementById('videoModal').classList.remove('hidden');
+
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        document.getElementById('localVideo').srcObject = localStream;
+
+        setupPeerConnection();
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+
+        await sendSignal('offer', JSON.stringify(offer));
+    }
+
+    function setupPeerConnection() {
+        peerConnection = new RTCPeerConnection(rtcConfig);
+
+        peerConnection.onicecandidate = event => {
+            if (event.candidate) sendSignal('candidate', JSON.stringify(event.candidate));
+        };
+
+        peerConnection.ontrack = event => {
+            document.getElementById('remoteVideo').srcObject = event.streams[0];
+        };
+    }
+
+    async function sendSignal(type, payload) {
+        await databases.createDocument(DB_ID, SIGNAL_COLLECTION, ID.unique(), {
+            senderId: currentUser.$id,
+            targetId: activeDMTarget,
+            type: type,
+            payload: payload
+        });
+    }
+
+    function initSignalingListener() {
+        signalRealtimeUnsub = client.subscribe(
+            `databases.${DB_ID}.collections.${SIGNAL_COLLECTION}.documents`,
+            async response => {
+                if (response.events.includes('databases.*.collections.*.documents.*.create')) {
+                    const signal = response.payload;
+                    if (signal.targetId !== currentUser.$id) return;
+
+                    const data = JSON.parse(signal.payload);
+
+                    if (signal.type === 'offer') {
+                        document.getElementById('videoModal').classList.remove('hidden');
+                        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                        document.getElementById('localVideo').srcObject = localStream;
+
+                        setupPeerConnection();
+                        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
+                        const answer = await peerConnection.createAnswer();
+                        await peerConnection.setLocalDescription(answer);
+                        await sendSignal('answer', JSON.stringify(answer));
+
+                    } else if (signal.type === 'answer' && peerConnection) {
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
+                    } else if (signal.type === 'candidate' && peerConnection) {
+                        await peerConnection.addIceCandidate(new RTCIceCandidate(data));
+                    }
+                }
+            }
+        );
+    }
+
+    function endVideoCall() {
+        if (peerConnection) peerConnection.close();
+        if (localStream) localStream.getTracks().forEach(track => track.stop());
+        document.getElementById('videoModal').classList.add('hidden');
+    }
+
+    // CHAT RENDERER
     function addChat(user, text, isoTimestamp) {
         const box       = document.getElementById('chatBox');
         const isSys     = user === "SYS";
@@ -584,11 +715,10 @@
                         :                  "color: #00ffcc;";
         const timeStr   = formatTime(isoTimestamp || new Date());
 
-        // Render body: detect file attachments, otherwise escape plain text
         let bodyHtml;
         if (!isSys && text.startsWith('__FILE__')) {
             try {
-                const meta = JSON.parse(text.slice(8)); // strip '__FILE__'
+                const meta = JSON.parse(text.slice(8));
                 if (meta.type && meta.type.startsWith('image/')) {
                     const viewUrl = getFileUrl(meta.id);
                     bodyHtml = `<a href="${viewUrl}" target="_blank" rel="noopener">
