@@ -171,30 +171,34 @@
         <div class="nav-link"        id="tab-dm"   onclick="switchTab('dm')">DM / GROUPS</div>
     </div>
 
+    <div id="freqControls" class="mb-2">
+        <div class="input-group input-group-sm">
+            <input type="text" id="freqInput" class="form-control bg-dark text-white" placeholder="Frequency Channel">
+            <button class="btn btn-success" onclick="joinFreq()">JOIN</button>
+        </div>
+    </div>
+
+    <!-- CLEAN DM CONTROLS (SINGLE ADD CONTACT BAR) -->
     <div id="dmControls" class="hidden mb-2">
-    <!-- Single Add Contact Bar -->
-    <div class="input-group input-group-sm mb-2">
-        <input type="text" id="friendCodeInput" class="form-control bg-dark text-white" placeholder="Friend Code">
-        <button class="btn btn-info" onclick="addFriend()">ADD CONTACT</button>
-    </div>
+        <div class="input-group input-group-sm mb-2">
+            <input type="text" id="friendCodeInput" class="form-control bg-dark text-white" placeholder="Friend Code">
+            <button class="btn btn-info" onclick="addFriend()">ADD CONTACT</button>
+        </div>
 
-    <!-- Create Group Bar -->
-    <div class="input-group input-group-sm mb-2">
-        <input type="text" id="groupNameInput" class="form-control bg-dark text-white" placeholder="Group Name">
-        <button class="btn btn-warning" onclick="createGroup()">CREATE GROUP</button>
-    </div>
+        <div class="input-group input-group-sm mb-2">
+            <input type="text" id="groupNameInput" class="form-control bg-dark text-white" placeholder="Group Name">
+            <button class="btn btn-warning" onclick="createGroup()">CREATE GROUP</button>
+        </div>
 
-    <!-- Sidebar List -->
-    <div class="contacts-sidebar text-white" id="contactsList">
-        <div class="text-muted p-1">No contacts or groups found.</div>
-    </div>
+        <div class="contacts-sidebar text-white" id="contactsList">
+            <div class="text-muted p-1">No contacts or groups found.</div>
+        </div>
 
-    <!-- Active Target Display & Call Button -->
-    <div class="d-flex justify-content-between align-items-center mb-1">
-        <span class="text-warning" style="font-size: 0.7rem;" id="activeDMDisplay">No target selected.</span>
-        <button id="videoCallBtn" class="btn btn-outline-success btn-sm hidden" style="font-size: 0.65rem; padding: 1px 6px;" onclick="startVideoCall()">📹 CALL</button>
+        <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="text-warning" style="font-size: 0.7rem;" id="activeDMDisplay">No target selected.</span>
+            <button id="videoCallBtn" class="btn btn-outline-success btn-sm hidden" style="font-size: 0.65rem; padding: 1px 6px;" onclick="startVideoCall()">📹 CALL</button>
+        </div>
     </div>
-</div>
 
     <div id="chatBox" class="chat-area"></div>
 
@@ -228,8 +232,8 @@
     const DB_ID               = '6a64f4430013964a8413';
     const MSG_COLLECTION      = 'messages';
     const CONTACTS_COLLECTION = 'contacts';
-    const GROUPS_COLLECTION   = 'groups';     // Create this collection in Console
-    const SIGNAL_COLLECTION   = 'signaling';  // Create this collection in Console
+    const GROUPS_COLLECTION   = 'groups';
+    const SIGNAL_COLLECTION   = 'signaling';
     const BUCKET_ID           = 'YOUR_BUCKET_ID';
 
     const MAX_FILE_MB   = 10;
@@ -419,40 +423,32 @@
     }
 
     // DM & GROUPS LOGIC
-    // Add contact with custom nickname support
-async function addFriend() {
-    const code = document.getElementById('friendCodeInput').value.trim();
-    const customNickname = document.getElementById('friendNicknameInput').value.trim();
+    async function addFriend() {
+        const code = document.getElementById('friendCodeInput').value.trim();
+        if (!code || code === currentUser.$id) return alert("Invalid code.");
 
-    if (!code || code === currentUser.$id) return alert("Invalid code.");
+        try {
+            await databases.createDocument(DB_ID, CONTACTS_COLLECTION, ID.unique(), {
+                userId:     currentUser.$id,
+                friendId:   code,
+                friendName: `${code.substring(0, 4)}`
+            });
+            document.getElementById('friendCodeInput').value = "";
+            loadContactsAndGroups();
+        } catch (e) { alert("Failed to add contact: " + e.message); }
+    }
 
-    // Fall back to short ID if no nickname is entered
-    const displayName = customNickname || `${code.substring(0, 4)}`;
+    async function editNickname(docId, currentName) {
+        const newName = prompt("Enter new nickname:", currentName);
+        if (!newName || newName.trim() === "" || newName === currentName) return;
 
-    try {
-        await databases.createDocument(DB_ID, CONTACTS_COLLECTION, ID.unique(), {
-            userId:     currentUser.$id,
-            friendId:   code,
-            friendName: displayName
-        });
-        document.getElementById('friendCodeInput').value = "";
-        document.getElementById('friendNicknameInput').value = "";
-        loadContactsAndGroups();
-    } catch (e) { alert("Failed to add contact: " + e.message); }
-}
-
-// Edit existing contact nickname
-async function editNickname(docId, currentName) {
-    const newName = prompt("Enter new nickname:", currentName);
-    if (!newName || newName.trim() === "" || newName === currentName) return;
-
-    try {
-        await databases.updateDocument(DB_ID, CONTACTS_COLLECTION, docId, {
-            friendName: newName.trim()
-        });
-        loadContactsAndGroups();
-    } catch (e) { alert("Failed to update nickname: " + e.message); }
-}
+        try {
+            await databases.updateDocument(DB_ID, CONTACTS_COLLECTION, docId, {
+                friendName: newName.trim()
+            });
+            loadContactsAndGroups();
+        } catch (e) { alert("Failed to update nickname: " + e.message); }
+    }
 
     async function createGroup() {
         const groupName = document.getElementById('groupNameInput').value.trim();
@@ -467,98 +463,118 @@ async function editNickname(docId, currentName) {
         } catch (e) { alert("Failed to create group: " + e.message); }
     }
 
-    async function loadContactsAndGroups() {
-    const list = document.getElementById('contactsList');
-    list.innerHTML = "Loading...";
+    async function addUserToGroup(groupId, groupName) {
+        const friendId = prompt(`Enter Friend Code to add to "${groupName}":`);
+        if (!friendId || !friendId.trim()) return;
 
-    try {
-        const friendsRes = await databases.listDocuments(DB_ID, CONTACTS_COLLECTION);
-        const groupsRes  = await databases.listDocuments(DB_ID, GROUPS_COLLECTION);
+        try {
+            const group = await databases.getDocument(DB_ID, GROUPS_COLLECTION, groupId);
+            const currentMembers = Array.isArray(group.members) ? group.members : [group.members];
 
-        list.innerHTML = "";
+            if (currentMembers.includes(friendId.trim())) {
+                return alert("User is already in this group.");
+            }
 
-        const myContacts = friendsRes.documents.filter(doc => doc.userId === currentUser.$id);
-        const myGroups   = groupsRes.documents.filter(doc => 
-            Array.isArray(doc.members) ? doc.members.includes(currentUser.$id) : doc.members === currentUser.$id
-        );
+            const updatedMembers = [...currentMembers, friendId.trim()];
+            await databases.updateDocument(DB_ID, GROUPS_COLLECTION, groupId, {
+                members: updatedMembers
+            });
 
-        if (myContacts.length === 0 && myGroups.length === 0) {
-            list.innerHTML = "<div class='text-muted p-1'>No contacts or groups found.</div>";
-            return;
-        }
-
-        // Render Contacts with Edit Nickname Pencil
-        myContacts.forEach(doc => {
-            const el = document.createElement('div');
-            el.className = 'contact-item';
-            el.style.display = 'flex';
-            el.style.justifyContent = 'space-between';
-            el.style.alignItems = 'center';
-            el.style.width = '100%';
-
-            const nameSpan = document.createElement('span');
-            nameSpan.innerText = `👤 ${doc.friendName} (${doc.friendId.substring(0, 5)})`;
-            nameSpan.style.flex = '1';
-            nameSpan.style.overflow = 'hidden';
-            nameSpan.style.textOverflow = 'ellipsis';
-            nameSpan.style.whiteSpace = 'nowrap';
-            nameSpan.onclick = () => openDM(doc.friendId, doc.friendName);
-
-            const editBtn = document.createElement('span');
-            editBtn.innerHTML = '✏️';
-            editBtn.title = 'Edit Nickname';
-            editBtn.style.cursor = 'pointer';
-            editBtn.style.paddingLeft = '6px';
-            editBtn.style.fontSize = '0.75rem';
-            editBtn.onclick = (e) => {
-                e.stopPropagation(); // Prevents opening the DM when clicking the icon
-                editNickname(doc.$id, doc.friendName);
-            };
-
-            el.appendChild(nameSpan);
-            el.appendChild(editBtn);
-            list.appendChild(el);
-        });
-
-        // Render Groups
-        // Render Groups with Add Member Button
-myGroups.forEach(doc => {
-    const el = document.createElement('div');
-    el.className = 'contact-item';
-    el.style.display = 'flex';
-    el.style.justifyContent = 'space-between';
-    el.style.alignItems = 'center';
-    el.style.color = '#00ffcc';
-
-    const nameSpan = document.createElement('span');
-    nameSpan.innerText = `👥 [Group] ${doc.name}`;
-    nameSpan.style.flex = '1';
-    nameSpan.style.overflow = 'hidden';
-    nameSpan.style.textOverflow = 'ellipsis';
-    nameSpan.style.whiteSpace = 'nowrap';
-    nameSpan.onclick = () => openGroup(doc.$id, doc.name);
-
-    const addMemberBtn = document.createElement('span');
-    addMemberBtn.innerHTML = '➕';
-    addMemberBtn.title = 'Add Member';
-    addMemberBtn.style.cursor = 'pointer';
-    addMemberBtn.style.paddingLeft = '6px';
-    addMemberBtn.style.fontSize = '0.75rem';
-    addMemberBtn.onclick = (e) => {
-        e.stopPropagation(); // Prevents opening the group when clicking the icon
-        addUserToGroup(doc.$id, doc.name);
-    };
-
-    el.appendChild(nameSpan);
-    el.appendChild(addMemberBtn);
-    list.appendChild(el);
-});
-
-    } catch (e) {
-        console.error("Diagnostic Error:", e);
-        list.innerHTML = `<div class='text-danger p-1'>Error: ${e.message}</div>`;
+            alert("User added successfully!");
+            loadContactsAndGroups();
+        } catch (e) { alert("Failed to add user: " + e.message); }
     }
-}
+
+    async function loadContactsAndGroups() {
+        const list = document.getElementById('contactsList');
+        list.innerHTML = "Loading...";
+
+        try {
+            const friendsRes = await databases.listDocuments(DB_ID, CONTACTS_COLLECTION);
+            const groupsRes  = await databases.listDocuments(DB_ID, GROUPS_COLLECTION);
+
+            list.innerHTML = "";
+
+            const myContacts = friendsRes.documents.filter(doc => doc.userId === currentUser.$id);
+            const myGroups   = groupsRes.documents.filter(doc => 
+                Array.isArray(doc.members) ? doc.members.includes(currentUser.$id) : doc.members === currentUser.$id
+            );
+
+            if (myContacts.length === 0 && myGroups.length === 0) {
+                list.innerHTML = "<div class='text-muted p-1'>No contacts or groups found.</div>";
+                return;
+            }
+
+            // Render Contacts with Edit Nickname Pencil
+            myContacts.forEach(doc => {
+                const el = document.createElement('div');
+                el.className = 'contact-item';
+                el.style.display = 'flex';
+                el.style.justifyContent = 'space-between';
+                el.style.alignItems = 'center';
+
+                const nameSpan = document.createElement('span');
+                nameSpan.innerText = `👤 ${doc.friendName} (${doc.friendId.substring(0, 5)})`;
+                nameSpan.style.flex = '1';
+                nameSpan.style.overflow = 'hidden';
+                nameSpan.style.textOverflow = 'ellipsis';
+                nameSpan.style.whiteSpace = 'nowrap';
+                nameSpan.onclick = () => openDM(doc.friendId, doc.friendName);
+
+                const editBtn = document.createElement('span');
+                editBtn.innerHTML = '✏️';
+                editBtn.title = 'Edit Nickname';
+                editBtn.style.cursor = 'pointer';
+                editBtn.style.paddingLeft = '6px';
+                editBtn.style.fontSize = '0.75rem';
+                editBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    editNickname(doc.$id, doc.friendName);
+                };
+
+                el.appendChild(nameSpan);
+                el.appendChild(editBtn);
+                list.appendChild(el);
+            });
+
+            // Render Groups with Add Member Button
+            myGroups.forEach(doc => {
+                const el = document.createElement('div');
+                el.className = 'contact-item';
+                el.style.display = 'flex';
+                el.style.justifyContent = 'space-between';
+                el.style.alignItems = 'center';
+                el.style.color = '#00ffcc';
+
+                const nameSpan = document.createElement('span');
+                nameSpan.innerText = `👥 [Group] ${doc.name}`;
+                nameSpan.style.flex = '1';
+                nameSpan.style.overflow = 'hidden';
+                nameSpan.style.textOverflow = 'ellipsis';
+                nameSpan.style.whiteSpace = 'nowrap';
+                nameSpan.onclick = () => openGroup(doc.$id, doc.name);
+
+                const addMemberBtn = document.createElement('span');
+                addMemberBtn.innerHTML = '➕';
+                addMemberBtn.title = 'Add Member';
+                addMemberBtn.style.cursor = 'pointer';
+                addMemberBtn.style.paddingLeft = '6px';
+                addMemberBtn.style.fontSize = '0.75rem';
+                addMemberBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    addUserToGroup(doc.$id, doc.name);
+                };
+
+                el.appendChild(nameSpan);
+                el.appendChild(addMemberBtn);
+                list.appendChild(el);
+            });
+
+        } catch (e) {
+            console.error("Error loading list:", e);
+            list.innerHTML = `<div class='text-danger p-1'>Error: ${e.message}</div>`;
+        }
+    }
 
     async function openDM(targetId, targetName) {
         activeTargetType = 'user';
@@ -825,32 +841,6 @@ myGroups.forEach(doc => {
             </div>`;
         box.scrollTop = box.scrollHeight;
     }
-    async function addUserToGroup(groupId, groupName) {
-    const friendId = prompt(`Enter Friend Code to add to "${groupName}":`);
-    if (!friendId || !friendId.trim()) return;
-
-    try {
-        // 1. Fetch current group details
-        const group = await databases.getDocument(DB_ID, GROUPS_COLLECTION, groupId);
-
-        // 2. Prevent duplicates
-        const currentMembers = Array.isArray(group.members) ? group.members : [group.members];
-        if (currentMembers.includes(friendId.trim())) {
-            return alert("User is already in this group.");
-        }
-
-        // 3. Update the members array in Appwrite
-        const updatedMembers = [...currentMembers, friendId.trim()];
-        await databases.updateDocument(DB_ID, GROUPS_COLLECTION, groupId, {
-            members: updatedMembers
-        });
-
-        alert("User added successfully!");
-        loadContactsAndGroups();
-    } catch (e) {
-        alert("Failed to add user: " + e.message);
-    }
-}
 </script>
 </body>
 </html>
