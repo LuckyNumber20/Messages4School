@@ -526,14 +526,38 @@ async function editNickname(docId, currentName) {
         });
 
         // Render Groups
-        myGroups.forEach(doc => {
-            const el = document.createElement('div');
-            el.className = 'contact-item';
-            el.style.color = '#00ffcc';
-            el.innerText = `👥 [Group] ${doc.name}`;
-            el.onclick = () => openGroup(doc.$id, doc.name);
-            list.appendChild(el);
-        });
+        // Render Groups with Add Member Button
+myGroups.forEach(doc => {
+    const el = document.createElement('div');
+    el.className = 'contact-item';
+    el.style.display = 'flex';
+    el.style.justifyContent = 'space-between';
+    el.style.alignItems = 'center';
+    el.style.color = '#00ffcc';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.innerText = `👥 [Group] ${doc.name}`;
+    nameSpan.style.flex = '1';
+    nameSpan.style.overflow = 'hidden';
+    nameSpan.style.textOverflow = 'ellipsis';
+    nameSpan.style.whiteSpace = 'nowrap';
+    nameSpan.onclick = () => openGroup(doc.$id, doc.name);
+
+    const addMemberBtn = document.createElement('span');
+    addMemberBtn.innerHTML = '➕';
+    addMemberBtn.title = 'Add Member';
+    addMemberBtn.style.cursor = 'pointer';
+    addMemberBtn.style.paddingLeft = '6px';
+    addMemberBtn.style.fontSize = '0.75rem';
+    addMemberBtn.onclick = (e) => {
+        e.stopPropagation(); // Prevents opening the group when clicking the icon
+        addUserToGroup(doc.$id, doc.name);
+    };
+
+    el.appendChild(nameSpan);
+    el.appendChild(addMemberBtn);
+    list.appendChild(el);
+});
 
     } catch (e) {
         console.error("Diagnostic Error:", e);
@@ -806,6 +830,32 @@ async function editNickname(docId, currentName) {
             </div>`;
         box.scrollTop = box.scrollHeight;
     }
+    async function addUserToGroup(groupId, groupName) {
+    const friendId = prompt(`Enter Friend Code to add to "${groupName}":`);
+    if (!friendId || !friendId.trim()) return;
+
+    try {
+        // 1. Fetch current group details
+        const group = await databases.getDocument(DB_ID, GROUPS_COLLECTION, groupId);
+
+        // 2. Prevent duplicates
+        const currentMembers = Array.isArray(group.members) ? group.members : [group.members];
+        if (currentMembers.includes(friendId.trim())) {
+            return alert("User is already in this group.");
+        }
+
+        // 3. Update the members array in Appwrite
+        const updatedMembers = [...currentMembers, friendId.trim()];
+        await databases.updateDocument(DB_ID, GROUPS_COLLECTION, groupId, {
+            members: updatedMembers
+        });
+
+        alert("User added successfully!");
+        loadContactsAndGroups();
+    } catch (e) {
+        alert("Failed to add user: " + e.message);
+    }
+}
 </script>
 </body>
 </html>
